@@ -1,6 +1,6 @@
 // --- /src/pages/admin/MeetingResults.jsx ---
 import React, { useState, useEffect, useMemo } from 'react';
-import { collection, query, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, orderBy } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, orderBy } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../../firebase/config';
 import Spinner from '../../components/Spinner';
@@ -8,7 +8,7 @@ import Modal from '../../components/Modal';
 
 const MeetingResults = () => {
     const [mode, setMode] = useState('list');
-    const [allMeetings, setAllMeetings] = useState([]);
+    const [meetings, setMeetings] = useState([]);
     const [availableMeetings, setAvailableMeetings] = useState([]);
     const [users, setUsers] = useState([]);
     const [savedResults, setSavedResults] = useState([]);
@@ -21,9 +21,15 @@ const MeetingResults = () => {
 
     useEffect(() => {
         setLoading(true);
-        const meetingsQuery = query(collection(db, 'meetings'));
-        const unsubMeetings = onSnapshot(meetingsQuery, snapshot => {
-            setAllMeetings(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+
+        // ✅ 수정된 부분: '완료(finished)' 상태인 회의만 직접 가져오도록 로직을 단순화했습니다.
+        const meetingsQuery = query(collection(db, 'meetings'), where("status", "==", "finished"));
+        const unsubMeetings = onSnapshot(meetingsQuery, (snapshot) => {
+            const finishedMeetings = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+            setMeetings(finishedMeetings); // 가져온 회의 목록을 저장
+        }, (err) => {
+            console.error("Finished meetings fetch error:", err);
+            setLoading(false);
         });
 
         const usersQuery = query(collection(db, 'users'), where("approved", "==", true));
@@ -33,37 +39,21 @@ const MeetingResults = () => {
         const unsubResults = onSnapshot(resultsQuery, snapshot => {
             setSavedResults(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
             setLoading(false);
+        }, (err) => {
+            console.error("Meeting results fetch error:", err);
+            setLoading(false);
         });
 
         return () => { unsubMeetings(); unsubUsers(); unsubResults(); };
     }, []);
 
+    // ✅ 수정된 부분: 이미 결과가 작성된 회의를 제외하는 로직
     useEffect(() => {
         if (loading) return;
-
         const resultMeetingIds = new Set(savedResults.map(r => r.meetingId));
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-
-        const filtered = allMeetings.filter(meeting => {
-            if (resultMeetingIds.has(meeting.id)) {
-                return false;
-            }
-            
-            if (meeting.status === 'finished') {
-                return true;
-            }
-
-            const meetingEndDate = new Date(meeting.endDate);
-            if ((meeting.status === 'upcoming' || meeting.status === 'postponed') && meetingEndDate < today) {
-                return true;
-            }
-
-            return false;
-        });
-
-        setAvailableMeetings(filtered);
-    }, [allMeetings, savedResults, loading]);
+        const available = meetings.filter(m => !resultMeetingIds.has(m.id));
+        setAvailableMeetings(available);
+    }, [meetings, savedResults, loading]);
 
 
     const handleCreateNew = (meeting) => {
