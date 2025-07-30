@@ -1,6 +1,6 @@
 // --- /src/pages/member/MyProposals.jsx ---
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, onSnapshot, orderBy } from 'firebase/firestore';
+import { collection, query, where, onSnapshot } from 'firebase/firestore'; // orderBy 제거
 import { db } from '../../firebase/config';
 import { useAuth } from '../../hooks/useAuth';
 import Spinner from '../../components/Spinner';
@@ -20,14 +20,19 @@ const MyProposals = () => {
             return;
         }
         setLoading(true);
+
+        // ✅ 수정된 부분: orderBy("createdAt", "desc")를 쿼리에서 제거했습니다.
         const q = query(
             collection(db, 'proposals'), 
-            where("proposerId", "==", user.uid),
-            orderBy("createdAt", "desc")
+            where("proposerId", "==", user.uid)
         );
         
         const unsubscribe = onSnapshot(q, (snapshot) => {
             const proposalList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            
+            // ✅ 추가된 부분: 데이터를 가져온 후, 브라우저에서 직접 최신순으로 정렬합니다.
+            proposalList.sort((a, b) => (b.createdAt?.toDate() || 0) - (a.createdAt?.toDate() || 0));
+
             setProposals(proposalList);
             setLoading(false);
         }, (error) => {
