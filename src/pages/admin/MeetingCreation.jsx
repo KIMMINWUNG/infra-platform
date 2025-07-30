@@ -5,7 +5,6 @@ import { db } from '../../firebase/config';
 import Spinner from '../../components/Spinner';
 import Modal from '../../components/Modal';
 
-// ✅ 컴포넌트들을 모두 바깥으로 이동시켰습니다.
 const FormInput = ({ label, ...props }) => (
     <div className="form_group">
         <label>{label}</label>
@@ -50,11 +49,10 @@ const MeetingCreation = () => {
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [editingMeeting, setEditingMeeting] = useState(null);
     const [confirmDeleteModal, setConfirmDeleteModal] = useState({ isOpen: false, meeting: null });
-    const [users, setUsers] = useState([]); // ✅ 사용자 목록 저장을 위한 state
-    const [isAttendeeModalOpen, setIsAttendeeModalOpen] = useState(false); // ✅ 참석자 명단 모달 state
-    const [selectedMeetingAttendees, setSelectedMeetingAttendees] = useState([]); // ✅ 선택된 회의의 참석자 정보 state
+    const [users, setUsers] = useState([]);
+    const [isAttendeeModalOpen, setIsAttendeeModalOpen] = useState(false);
+    const [selectedMeetingAttendees, setSelectedMeetingAttendees] = useState([]);
 
-    // ✅ 사용자 목록을 불러오는 useEffect 추가
     useEffect(() => {
         const usersQuery = query(collection(db, 'users'));
         const unsubscribe = onSnapshot(usersQuery, (snapshot) => {
@@ -76,7 +74,6 @@ const MeetingCreation = () => {
         return () => unsubscribe();
     }, []);
 
-    // ✅ 참석자 명단 보기 버튼 클릭 핸들러
     const handleViewAttendees = (attendeeIds) => {
         if (!attendeeIds || attendeeIds.length === 0) {
             setSelectedMeetingAttendees([]);
@@ -240,7 +237,7 @@ const MeetingCreation = () => {
                                     <th>상태</th>
                                     <th>회의 주제</th>
                                     <th>기간</th>
-                                    <th>참석 예정</th> {/* ✅ 참석 예정 열 추가 */}
+                                    <th>참석 예정</th>
                                     <th>상태 변경</th>
                                     <th>관리</th>
                                 </tr>
@@ -251,7 +248,6 @@ const MeetingCreation = () => {
                                         <td><StatusBadge status={m.status} /></td>
                                         <td>{m.title}</td>
                                         <td>{m.startDate} ~ {m.endDate}</td>
-                                        {/* ✅ 참석 예정 인원 및 보기 버튼 추가 */}
                                         <td>
                                             <span>{m.attendees?.length || 0}명 </span>
                                             <button onClick={() => handleViewAttendees(m.attendees)} className="button_link" style={{marginLeft: '0.5rem'}}>
@@ -259,11 +255,14 @@ const MeetingCreation = () => {
                                             </button>
                                         </td>
                                         <td>
-                                            {m.status !== 'finished' && (
+                                            {/* ✅ '완료' 상태가 아닐 때만 상태 변경 UI가 보이도록 수정 */}
+                                            {m.status !== 'finished' && m.status !== 'cancelled' && (
                                                 <select value={m.status} onChange={(e) => handleStatusChange(m.id, e.target.value)} className="select_input">
                                                     <option value="upcoming">예정</option>
                                                     <option value="postponed">연기</option>
                                                     <option value="cancelled">취소</option>
+                                                    {/* ✅ '완료' 옵션 추가 */}
+                                                    <option value="finished">완료</option>
                                                 </select>
                                             )}
                                         </td>
@@ -278,7 +277,6 @@ const MeetingCreation = () => {
                 )}
             </div>
             
-            {/* ... (기존 수정/삭제 모달은 변경 없음) ... */}
             <Modal isOpen={isEditModalOpen} onClose={() => setIsEditModalOpen(false)} title="회의 상세 정보 수정" size="4xl">
                 {editingMeeting && (
                     <div className="form_layout">
@@ -319,7 +317,6 @@ const MeetingCreation = () => {
                 )}
             </Modal>
 
-            {/* ✅ 참석자 명단 확인 모달 추가 */}
             <Modal isOpen={isAttendeeModalOpen} onClose={() => setIsAttendeeModalOpen(false)} title="참석 예정 의원 명단">
                 {selectedMeetingAttendees.length > 0 ? (
                     <ul className="list_container" style={{gap: '0.5rem'}}>

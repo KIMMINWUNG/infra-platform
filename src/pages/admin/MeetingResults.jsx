@@ -1,6 +1,6 @@
 // --- /src/pages/admin/MeetingResults.jsx ---
 import React, { useState, useEffect, useMemo } from 'react';
-import { collection, query, where, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, orderBy } from 'firebase/firestore';
+import { collection, query, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, orderBy } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../../firebase/config';
 import Spinner from '../../components/Spinner';
@@ -8,7 +8,8 @@ import Modal from '../../components/Modal';
 
 const MeetingResults = () => {
     const [mode, setMode] = useState('list');
-    const [meetings, setMeetings] = useState([]);
+    const [allMeetings, setAllMeetings] = useState([]);
+    const [availableMeetings, setAvailableMeetings] = useState([]);
     const [users, setUsers] = useState([]);
     const [savedResults, setSavedResults] = useState([]);
     const [currentResult, setCurrentResult] = useState(null);
@@ -20,19 +21,50 @@ const MeetingResults = () => {
 
     useEffect(() => {
         setLoading(true);
-        const today = new Date().toISOString().slice(0, 10);
-        const meetingsQuery = query(collection(db, 'meetings'), where("endDate", "<", today), where("status", "in", ["upcoming", "postponed"]));
-        const unsubMeetings = onSnapshot(meetingsQuery, snapshot => setMeetings(snapshot.docs.map(d => ({ id: d.id, ...d.data() }))));
+        const meetingsQuery = query(collection(db, 'meetings'));
+        const unsubMeetings = onSnapshot(meetingsQuery, snapshot => {
+            setAllMeetings(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+        });
+
         const usersQuery = query(collection(db, 'users'), where("approved", "==", true));
         const unsubUsers = onSnapshot(usersQuery, snapshot => setUsers(snapshot.docs.map(d => ({ id: d.id, ...d.data() }))));
+
         const resultsQuery = query(collection(db, 'meeting_results'), orderBy("createdAt", "desc"));
         const unsubResults = onSnapshot(resultsQuery, snapshot => {
-            const resultsList = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-            setSavedResults(resultsList);
+            setSavedResults(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
             setLoading(false);
-        }, () => setLoading(false)); // 오류 발생 시에도 로딩 종료
+        });
+
         return () => { unsubMeetings(); unsubUsers(); unsubResults(); };
     }, []);
+
+    useEffect(() => {
+        if (loading) return;
+
+        const resultMeetingIds = new Set(savedResults.map(r => r.meetingId));
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        const filtered = allMeetings.filter(meeting => {
+            if (resultMeetingIds.has(meeting.id)) {
+                return false;
+            }
+            
+            if (meeting.status === 'finished') {
+                return true;
+            }
+
+            const meetingEndDate = new Date(meeting.endDate);
+            if ((meeting.status === 'upcoming' || meeting.status === 'postponed') && meetingEndDate < today) {
+                return true;
+            }
+
+            return false;
+        });
+
+        setAvailableMeetings(filtered);
+    }, [allMeetings, savedResults, loading]);
+
 
     const handleCreateNew = (meeting) => {
         setError('');
@@ -56,14 +88,13 @@ const MeetingResults = () => {
         setMode('edit');
     };
 
-    // ✅ 무한 로딩 방지를 위한 try-catch-finally 구문
     const handleSave = async () => {
         if (!currentResult) return;
         setLoading(true);
         setError('');
-        let imageUrl = currentResult.imageUrl || '';
-
+        
         try {
+            let imageUrl = currentResult.imageUrl || '';
             if (imageFile) {
                 const imageRef = ref(storage, `meeting_results/${currentResult.meetingId || currentResult.id}/${Date.now()}_${imageFile.name}`);
                 const snapshot = await uploadBytes(imageRef, imageFile);
@@ -84,14 +115,13 @@ const MeetingResults = () => {
             setCurrentResult(null);
         } catch (error) {
             console.error("회의 결과 저장/업로드 오류:", error);
-            setError(`오류: ${error.code}. Firebase 규칙을 확인해주세요.`);
+            setError(`오류: ${error.code}. Firebase 규칙 또는 코드 설정을 확인해주세요.`);
         } finally {
-            setLoading(false); // 성공/실패 여부와 관계없이 로딩 종료
+            setLoading(false);
         }
     };
 
     const handleDelete = async () => {
-        // ... (이하 코드는 이전과 동일)
         if (!confirmDeleteModal.result) return;
         setLoading(true);
         try {
@@ -138,7 +168,13 @@ const MeetingResults = () => {
                 </div>
                 <div className="table_wrapper">
                     <table className="table">
-                         <thead><tr><th>회의명</th><th>회의일자</th><th>관리</th></tr></thead>
+                         <thead>
+                            <tr>
+                                <th>회의명</th>
+                                <th>회의일자</th>
+                                <th>관리</th>
+                            </tr>
+                        </thead>
                         <tbody>
                             {savedResults.map(r => (
                                 <tr key={r.id}>
@@ -153,6 +189,13 @@ const MeetingResults = () => {
                         </tbody>
                     </table>
                 </div>
+                <Modal isOpen={confirmDeleteModal.isOpen} onClose={() => setConfirmDeleteModal({ isOpen: false, result: null })} title="결과 삭제 확인" size="md">
+                    <p>정말로 <strong>{confirmDeleteModal.result?.meetingTitle}</strong> 회의 결과를 삭제하시겠습니까?</p>
+                    <div className="modal_footer">
+                        <button onClick={() => setConfirmDeleteModal({ isOpen: false, result: null })} className="button button_secondary">취소</button>
+                        <button onClick={handleDelete} className="button button_danger">삭제</button>
+                    </div>
+                </Modal>
             </div>
         );
     }
@@ -165,7 +208,7 @@ const MeetingResults = () => {
                     <button onClick={() => setMode('list')} className="button button_secondary">목록으로</button>
                 </div>
                 <div className="list_container">
-                    {meetings.length > 0 ? meetings.map(m => (
+                    {loading ? <Spinner /> : availableMeetings.length > 0 ? availableMeetings.map(m => (
                         <button key={m.id} onClick={() => handleCreateNew(m)} className="list_item_button">
                             <span>{m.title}</span>
                             <span style={{marginLeft: '1rem', fontSize: '0.875rem', color: '#64748b'}}>({m.startDate})</span>
@@ -212,6 +255,26 @@ const MeetingResults = () => {
                     </button>
                 </div>
             )}
+            <Modal isOpen={isAttendeeModalOpen} onClose={() => setIsAttendeeModalOpen(false)} title="참석자 명단 수정" size="4xl">
+                <div className="attendee_modal_container">
+                    {Object.entries(groupedUsers).map(([division, members]) => (
+                        <div key={division}>
+                            <h5 className="attendee_modal_division_title">{division}</h5>
+                            <div className="attendee_modal_grid">
+                                {members.map(user => (
+                                    <label key={user.id} className="attendee_modal_label">
+                                        <input type="checkbox" checked={currentResult?.attendees.includes(user.id)} onChange={() => handleAttendeeToggle(user.id)} className="form_checkbox" />
+                                        <span>{user.name} <span style={{color: '#64748b', fontSize: '0.875rem'}}>({user.affiliation})</span></span>
+                                    </label>
+                                ))}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+                 <div className="modal_footer">
+                    <button onClick={() => setIsAttendeeModalOpen(false)} className="button button_primary">완료</button>
+                </div>
+            </Modal>
         </div>
     );
 };
