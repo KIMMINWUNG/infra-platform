@@ -55,23 +55,28 @@ const MeetingCreation = () => {
 
     useEffect(() => {
         const usersQuery = query(collection(db, 'users'));
-        const unsubscribe = onSnapshot(usersQuery, (snapshot) => {
+        const unsubscribeUsers = onSnapshot(usersQuery, (snapshot) => {
             const userList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             setUsers(userList);
         });
-        return () => unsubscribe();
-    }, []);
-
-    useEffect(() => {
+        
         setListLoading(true);
-        const q = query(collection(db, 'meetings'));
-        const unsubscribe = onSnapshot(q, (snapshot) => {
+        const meetingsQuery = query(collection(db, 'meetings'));
+        // ✅ onSnapshot에 오류 처리 콜백을 추가하여 무한 로딩을 방지합니다.
+        const unsubscribeMeetings = onSnapshot(meetingsQuery, (snapshot) => {
             const meetingList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             meetingList.sort((a, b) => (b.createdAt?.toDate() || 0) - (a.createdAt?.toDate() || 0));
             setMeetings(meetingList);
             setListLoading(false);
+        }, (error) => {
+            console.error("회의 목록 로딩 오류 (규칙 확인 필요): ", error);
+            setListLoading(false); // 오류 발생 시에도 로딩 종료
         });
-        return () => unsubscribe();
+
+        return () => {
+            unsubscribeUsers();
+            unsubscribeMeetings();
+        };
     }, []);
 
     const handleViewAttendees = (attendeeIds) => {
@@ -255,13 +260,11 @@ const MeetingCreation = () => {
                                             </button>
                                         </td>
                                         <td>
-                                            {/* ✅ '완료' 상태가 아닐 때만 상태 변경 UI가 보이도록 수정 */}
                                             {m.status !== 'finished' && m.status !== 'cancelled' && (
                                                 <select value={m.status} onChange={(e) => handleStatusChange(m.id, e.target.value)} className="select_input">
                                                     <option value="upcoming">예정</option>
                                                     <option value="postponed">연기</option>
                                                     <option value="cancelled">취소</option>
-                                                    {/* ✅ '완료' 옵션 추가 */}
                                                     <option value="finished">완료</option>
                                                 </select>
                                             )}
