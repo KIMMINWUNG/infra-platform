@@ -62,15 +62,21 @@ const MeetingCreation = () => {
         
         setListLoading(true);
         const meetingsQuery = query(collection(db, 'meetings'));
-        // ✅ onSnapshot에 오류 처리 콜백을 추가하여 무한 로딩을 방지합니다.
         const unsubscribeMeetings = onSnapshot(meetingsQuery, (snapshot) => {
             const meetingList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            meetingList.sort((a, b) => (b.createdAt?.toDate() || 0) - (a.createdAt?.toDate() || 0));
+            
+            // ✅ 수정된 부분: createdAt 필드의 형식이 다르더라도 안전하게 정렬하도록 수정
+            meetingList.sort((a, b) => {
+                const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt);
+                const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt);
+                return dateB - dateA;
+            });
+
             setMeetings(meetingList);
             setListLoading(false);
         }, (error) => {
             console.error("회의 목록 로딩 오류 (규칙 확인 필요): ", error);
-            setListLoading(false); // 오류 발생 시에도 로딩 종료
+            setListLoading(false);
         });
 
         return () => {
